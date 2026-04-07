@@ -41,6 +41,20 @@ get_meta() {
     cols=$(echo "$header" | sed 's/#columns: \(.*\) | pk:.*$/\1/' | xargs)
     pk_name=$(echo "$header" | sed 's/.*| pk:\(.*\)$/\1/' | xargs)
     pk_idx=$(echo "$cols" | awk -v col="$pk_name" '{for(i=1;i<=NF;i++) if($i==col) print i}')
+    types=$(echo "$header" | sed 's/.*| types: \(.*\) | pk:.*$/\1/' | xargs)
+    return 0
+}
+validate_type() {
+    value=$1
+    type=$2
+
+    if [ "$type" == "int" ]; then
+        [[ $value =~ ^[0-9]+$ ]] || return 1
+    elif [ "$type" == "string" ]; then
+        [[ $value =~ ^[a-zA-Z]+$ ]] || return 1
+    fi
+
+    return 0
 }
 
 main_menu() {
@@ -97,7 +111,7 @@ create_table() {
     fi
 
     read -p "Enter number of columns: " num_col
-    cols=""; pk=""
+    cols=""; pk=""; types=""
     for ((i=1; i<=num_col; i++)); do
         read -p "Column $i name: " col_name
         read -p "Column $i type (int/string): " type
@@ -106,12 +120,13 @@ create_table() {
             [ "$is_pk" == "y" ] && pk="$col_name"
         fi
         cols+="$col_name "
+        types+="$type "
     done
     
     cols=$(echo "$cols" | xargs)
     [ -z "$pk" ] && pk=$(echo "$cols" | cut -d' ' -f1)
     
-    echo "#columns: $cols | pk: $pk" > "$table"
+    echo "#columns: $cols | types: $types | pk: $pk" > "$table"
     echo "Table '$table' created successfully."
 }
 
@@ -132,8 +147,14 @@ insert_data() {
     fi
 
     row=""
+    i=1
     for c in $cols; do
+        type=$(echo "$types" | awk -v idx="$i" '{print $idx}')
         read -p "Enter value for $c: " val
+        if ! validate_type "$val" "$type"; then
+            echo "Invalid type for $c Expected $type"
+            return
+        fi
         if [ "$c" == "$pk_name" ]; then
             idx=$(echo "$cols" | awk -v col="$c" '{for(i=1;i<=NF;i++) if($i==col) print i}')
             if tail -n +2 "$table" | cut -d':' -f"$idx" | grep -q "^$val$"; then
@@ -142,6 +163,7 @@ insert_data() {
             fi
         fi
         row+="$val:"
+        ((i++))
     done
     echo "${row%:}" >> "$table"
     echo "Data inserted."
